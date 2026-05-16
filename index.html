@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="fr" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mouwatin AI — المساعد الإداري المغربي</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Naskh+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🇲🇦</text></svg>">
+</head>
+<body>
+  <div id="app">
+    <!-- Header -->
+    <header>
+      <div class="header-content">
+        <div class="logo-area">
+          <div class="logo-icon">مو</div>
+          <div class="logo-text">
+            <h1>Mouwatin AI</h1>
+            <span class="subtitle">المساعد الإداري المغربي</span>
+          </div>
+        </div>
+        <button id="settingsBtn" class="icon-btn" title="Paramètres">⚙️</button>
+      </div>
+    </header>
+
+    <!-- Settings panel -->
+    <div id="settingsPanel" class="settings-panel hidden">
+      <div class="settings-content">
+        <label for="apiKeyInput">Clé API OpenAI <span class="required">*</span></label>
+        <input type="password" id="apiKeyInput" placeholder="sk-..." />
+        <p class="hint">La clé est stockée uniquement dans votre navigateur.</p>
+        <label for="modelSelect" class="mt-2">Modèle</label>
+        <select id="modelSelect">
+          <option value="gpt-4o">GPT-4o (recommandé)</option>
+          <option value="gpt-4o-mini">GPT-4o Mini (économique)</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Messages -->
+    <main id="chatMessages">
+      <div class="message assistant fade-in">
+        <div class="bubble">
+          <span class="arabic">مرحباً !</span> Je suis <strong>Mouwatin AI</strong> 🇲🇦, votre guide administratif marocain.<br><br>
+          Comment puis-je vous aider ?<br><br>
+          <span class="arabic">كيفاش نقدر نعينك؟</span>
+          <div class="bubble-footer">🇲🇦 Mouwatin AI</div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Typing indicator -->
+    <div id="typingIndicator" class="message assistant hidden">
+      <div class="bubble typing-bubble">
+        <span class="typing-dot"></span>
+        <span class="typing-dot"></span>
+        <span class="typing-dot"></span>
+      </div>
+    </div>
+
+    <!-- Input -->
+    <form id="chatForm">
+      <div class="input-area">
+        <textarea id="chatInput" rows="1" placeholder="Posez votre question administrative..." style="min-height:44px;max-height:120px"></textarea>
+        <button type="submit" id="sendBtn">Envoyer</button>
+      </div>
+      <p class="disclaimer">Mouwatin AI peut faire des erreurs. Ne remplace pas un professionnel du droit.</p>
+    </form>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
