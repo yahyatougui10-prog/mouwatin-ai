@@ -40,20 +40,22 @@
 
 /* ── Dark mode ── */
 [data-theme="dark"] {
-  --bg: #111827;
-  --bg-card: #1f2937;
-  --bg-header: #1f2937;
-  --bg-input: #374151;
-  --text: #f9fafb;
-  --text-secondary: #d1d5db;
-  --text-muted: #6b7280;
-  --border: #374151;
-  --border-light: #2d3a4a;
-  --shadow: 0 1px 3px rgba(0,0,0,0.3);
-  --shadow-lg: 0 10px 25px rgba(0,0,0,0.5);
-  --green-bg: rgba(0, 98, 51, 0.15);
+  --bg: #0f172a;
+  --bg-card: #1e293b;
+  --bg-header: #1e293b;
+  --bg-input: #334155;
+  --text: #f1f5f9;
+  --text-secondary: #cbd5e1;
+  --text-muted: #64748b;
+  --border: #334155;
+  --border-light: #1e293b;
+  --shadow: 0 1px 3px rgba(0,0,0,0.4);
+  --shadow-lg: 0 10px 25px rgba(0,0,0,0.6);
+  --shadow-glow: 0 0 0 3px rgba(0, 98, 51, 0.2);
+  --green-bg: rgba(0, 98, 51, 0.2);
   --green-light: #0d3320;
-  --sand: #2d2d1a;
+  --sand: #1a2e1a;
+  --gold-light: #2d2410;
 }
 
 /* ── Gold theme (Moroccan) ── */
@@ -707,6 +709,214 @@ body.drag-over::after {
 
 .hidden { display: none !important; }
 
+/* ── Code Blocks ── */
+.code-block {
+  background: #1e293b;
+  border-radius: 10px;
+  margin: 12px 0;
+  overflow: hidden;
+  position: relative;
+}
+[data-theme="dark"] .code-block { background: #0f172a; }
+[data-theme="gold"] .code-block { background: #2d2410; }
+[data-theme="sand"] .code-block { background: #2c1810; }
+
+.code-block pre {
+  padding: 14px 16px;
+  overflow-x: auto;
+  margin: 0;
+}
+.code-block code {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #e2e8f0;
+}
+.code-lang {
+  display: inline-block;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #94a3b8;
+  padding: 4px 12px;
+  background: rgba(255,255,255,0.05);
+}
+.code-copy {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: rgba(255,255,255,0.1);
+  border: none;
+  color: #94a3b8;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: background 0.15s;
+}
+.code-copy:hover { background: rgba(255,255,255,0.2); color: #fff; }
+
+.inline-code {
+  background: var(--border-light);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-family: 'JetBrains Mono', 'Consolas', monospace;
+  font-size: 0.85em;
+  color: var(--red);
+}
+
+/* ── Tables ── */
+.bubble table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+  font-size: 13px;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.bubble table th {
+  background: var(--green-bg);
+  color: var(--green);
+  font-weight: 600;
+  padding: 8px 12px;
+  text-align: left;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.bubble table td {
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--border-light);
+}
+.bubble table tr:last-child td { border-bottom: none; }
+.bubble table tr:hover td { background: var(--green-bg); }
+
+.table-sep { display: none; }
+
+/* ── Blockquotes ── */
+.bubble blockquote {
+  border-left: 3px solid var(--gold);
+  margin: 10px 0;
+  padding: 6px 12px;
+  background: var(--gold-light);
+  border-radius: 0 6px 6px 0;
+  font-style: italic;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+[data-theme="dark"] .bubble blockquote {
+  background: #2d2d1a;
+}
+
+/* ── Ordered/Unordered lists ── */
+.bubble ul, .bubble ol {
+  margin: 8px 0;
+  padding-left: 24px;
+}
+.bubble li { margin: 4px 0; }
+.list-num {
+  color: var(--green);
+  font-weight: 600;
+  margin-right: 4px;
+}
+
+/* ── Suggestions chips ── */
+.suggestions {
+  margin: 4px 0 12px 12px;
+  animation: fadeIn 0.3s ease;
+}
+.suggestions-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  font-weight: 500;
+}
+.suggestions-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.suggestion-chip {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 6px 14px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+}
+.suggestion-chip:hover {
+  border-color: var(--green);
+  color: var(--green);
+  background: var(--green-bg);
+}
+
+/* ── TTS Button ── */
+.tts-btn {
+  background: none;
+  border: none;
+  padding: 3px;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 14px;
+  transition: color 0.15s, background 0.15s;
+  display: flex;
+  align-items: center;
+}
+.tts-btn:hover {
+  color: var(--green);
+  background: var(--green-bg);
+}
+
+/* ── Sidebar action buttons ── */
+.sidebar-action-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 14px;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: all 0.15s;
+}
+.sidebar-action-btn:hover {
+  border-color: var(--red);
+  color: var(--red);
+  background: rgba(193, 39, 45, 0.05);
+}
+
+/* ── Keyboard shortcuts modal ── */
+.shortcut-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.shortcut-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+}
+.shortcut-item span {
+  color: var(--text-secondary);
+}
+.shortcut-item kbd {
+  background: var(--border-light);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 3px 8px;
+  font-size: 12px;
+  font-family: inherit;
+  font-weight: 600;
+  color: var(--text);
+  min-width: 24px;
+  text-align: center;
+  box-shadow: 0 1px 0 var(--border);
+}
+
 /* ── Feedback buttons ── */
 .feedback-group {
   display: flex;
@@ -1099,6 +1309,46 @@ body.drag-over::after {
   pointer-events: auto;
 }
 
+/* ── Offline indicator ── */
+body.offline #chatForm::after {
+  content: '⚠️ ' attr(data-offline-msg);
+  display: block;
+  text-align: center;
+  font-size: 11px;
+  color: var(--red);
+  margin-top: 6px;
+}
+body.offline #sendBtn { opacity: 0.4; }
+
+/* ── Stop streaming button ── */
+.stop-btn {
+  background: var(--red) !important;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: opacity 0.2s;
+  flex-shrink: 0;
+  margin-left: 4px;
+  line-height: 1;
+}
+.stop-btn:hover { opacity: 0.85; }
+
+/* ── Message timestamp ── */
+.msg-timestamp {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-left: auto;
+  margin-right: 4px;
+  opacity: 0.7;
+}
+
 /* ── Toast notification ── */
 .toast {
   position: fixed;
@@ -1191,6 +1441,33 @@ body.drag-over::after {
 
   .quick-action { padding: 6px 10px; font-size: 11px; }
 }
+
+/* ── Scroll-to-bottom floating button ── */
+#scrollBottomBtn {
+  position: absolute;
+  bottom: 80px;
+  right: 20px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  cursor: pointer;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  color: var(--text-secondary);
+  transition: all 0.2s;
+  z-index: 10;
+}
+#scrollBottomBtn:hover {
+  background: var(--green);
+  color: white;
+  border-color: var(--green);
+}
+#scrollBottomBtn.visible { display: flex; }
 
 /* ── Print ── */
 @media print {

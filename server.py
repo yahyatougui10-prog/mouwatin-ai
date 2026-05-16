@@ -5,13 +5,21 @@ Backend serveur : multi-provider AI (OpenAI, Anthropic, Mistral, Ollama),
 stockage SQLite, streaming SSE, upload fichiers, export PDF.
 """
 
-import json, os, sys, time, sqlite3, hashlib, re, io, uuid
+import json, os, sys, time, sqlite3, hashlib, re, io, uuid, logging, tempfile
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 from datetime import datetime, timezone
 from html import escape as html_escape
+from collections import defaultdict
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger("mouwatin")
 
 PORT = int(os.environ.get("PORT", 3000))
 PROVIDER = os.environ.get("AI_PROVIDER", "openai").lower()
@@ -20,7 +28,25 @@ ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY", "")
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
 
+# Rate limiting: max requests per IP per minute
+RATE_LIMIT = int(os.environ.get("RATE_LIMIT", "30"))
+_rate_store = defaultdict(list)
+
+def _check_rate_limit(ip):
+    now = time.time()
+    window = 60
+    _rate_store[ip] = [t for t in _rate_store[ip] if now - t < window]
+    if len(_rate_store[ip]) >= RATE_LIMIT:
+        return False
+    _rate_store[ip].append(now)
+    return True
+
 DB_PATH = os.environ.get("DB_PATH", os.path.join(os.path.dirname(os.path.abspath(__file__)), "mouwatin.db"))
+_db_dir = os.path.dirname(DB_PATH)
+if _db_dir and not os.path.exists(_db_dir):
+    os.makedirs(_db_dir, exist_ok=True)
+
+_start_time = time.time()
 
 SYSTEM_PROMPT = """# SYSTÈME — MOUWATIN AI · المساعد الإداري المغربي
 
@@ -139,6 +165,47 @@ def db_get_conversations(limit=50):
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+def db_search_conversations(query, limit=50):
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    like = f"%{query}%"
+    rows = conn.execute(
+        "SELECT DISTINCT c.id, c.title, c.provider, c.model, c.created_at, c.updated_at "
+        "FROM conversations c "
+        "LEFT JOIN messages m ON m.conversation_id = c.id "
+        "WHERE c.title LIKE ? OR m.content LIKE ? "
+        "ORDER BY c.updated_at DESC LIMIT ?",
+        (like, like, limit)
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+def db_delete_all_conversations():
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("DELETE FROM conversations")
+    conn.execute("DELETE FROM messages")
+    conn.commit()
+    conn.close()
+
+def db_get_usage_stats():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    total_conv = conn.execute("SELECT COUNT(*) as c FROM conversations").fetchone()["c"]
+    total_msgs = conn.execute("SELECT COUNT(*) as c FROM messages").fetchone()["c"]
+    total_fb = conn.execute("SELECT COUNT(*) as c FROM feedback").fetchone()["c"]
+    total_examples = conn.execute("SELECT COUNT(*) as c FROM learned_examples").fetchone()["c"]
+    top_models = conn.execute(
+        "SELECT model, COUNT(*) as c FROM conversations GROUP BY model ORDER BY c DESC LIMIT 5"
+    ).fetchall()
+    conn.close()
+    return {
+        "total_conversations": total_conv,
+        "total_messages": total_msgs,
+        "total_feedback": total_fb,
+        "total_examples": total_examples,
+        "top_models": [dict(r) for r in top_models],
+    }
 
 def db_get_conversation(conv_id):
     conn = sqlite3.connect(DB_PATH)
@@ -541,9 +608,34 @@ def generate_pdf_html(conversation):
 
 class MouwatinHandler(SimpleHTTPRequestHandler):
 
+    def log_message(self, format, *args):
+        logger.info("%s - %s", self.client_address[0], format % args)
+
     def do_GET(self):
         parsed = urlparse(self.path)
         path = parsed.path
+
+        client_ip = self.client_address[0]
+        if path.startswith("/api/") and not _check_rate_limit(client_ip):
+            return json_resp(self, {"error": "Trop de requêtes. Réessayez dans une minute.", "ok": False}, 429)
+
+        if path == "/api/health":
+            return json_resp(self, {
+                "status": "ok",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "provider": PROVIDER,
+                "version": "2.0.0",
+                "uptime": time.time() - _start_time,
+            })
+
+        if path == "/api/stats":
+            return json_resp(self, db_get_usage_stats())
+
+        if path == "/api/conversations/search" and parsed.query:
+            q = parse_qs(parsed.query).get("q", [""])[0]
+            if q:
+                return json_resp(self, db_search_conversations(q))
+            return json_resp(self, [])
 
         if path == "/api/conversations":
             return json_resp(self, db_get_conversations())
@@ -606,12 +698,19 @@ class MouwatinHandler(SimpleHTTPRequestHandler):
 
     def do_DELETE(self):
         parsed = urlparse(self.path)
+        if parsed.path == "/api/conversations":
+            db_delete_all_conversations()
+            logger.info("Toutes les conversations supprimées")
+            return json_resp(self, {"ok": True, "message": "Toutes les conversations ont été supprimées"})
         if parsed.path.startswith("/api/conversations/"):
             conv_id = parsed.path.split("/")[-1]
             db_delete_conversation(conv_id)
             return json_resp(self, {"ok": True})
 
     def do_POST(self):
+        client_ip = self.client_address[0]
+        if not _check_rate_limit(client_ip):
+            return json_resp(self, {"error": "Trop de requêtes. Réessayez dans une minute.", "ok": False}, 429)
         route = urlparse(self.path).path
         if route == "/api/chat":
             self._handle_chat(stream=False)
@@ -639,6 +738,18 @@ class MouwatinHandler(SimpleHTTPRequestHandler):
         messages = data.get("messages", [])
         provider_name = data.get("provider", PROVIDER)
         model = data.get("model", "gpt-4o")
+
+        if not isinstance(messages, list) or len(messages) == 0:
+            return json_resp(self, {"error": "Messages requis"}, 400)
+        if len(messages) > 100:
+            return json_resp(self, {"error": "Trop de messages (max 100)"}, 400)
+        for m in messages:
+            if not isinstance(m, dict) or "role" not in m or "content" not in m:
+                return json_resp(self, {"error": "Format de message invalide"}, 400)
+            if m["role"] not in ("user", "assistant", "system"):
+                return json_resp(self, {"error": f"Rôle invalide: {m['role']}"}, 400)
+            if not isinstance(m["content"], str) or len(m["content"]) > 50000:
+                return json_resp(self, {"error": "Contenu trop long (max 50000 chars)"}, 400)
 
         # Resolve provider
         pname, pconfig = get_provider(provider_name)
@@ -686,12 +797,30 @@ class MouwatinHandler(SimpleHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream; charset=utf-8")
         self.send_header("Cache-Control", "no-cache")
+        self.send_header("X-Accel-Buffering", "no")
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Connection", "keep-alive")
         self.end_headers()
 
-        parser = STREAM_PARSERS.get(provider_name, parse_openai_stream)
-        parser(resp, self._sse_send)
+        # Keepalive ping thread
+        import threading
+        stop_ping = threading.Event()
+        def ping():
+            while not stop_ping.is_set():
+                try:
+                    self.wfile.write(b": keepalive\n\n")
+                    self.wfile.flush()
+                except (BrokenPipeError, ConnectionResetError):
+                    break
+                stop_ping.wait(10)
+        t = threading.Thread(target=ping, daemon=True)
+        t.start()
+
+        try:
+            parser = STREAM_PARSERS.get(provider_name, parse_openai_stream)
+            parser(resp, self._sse_send)
+        finally:
+            stop_ping.set()
 
     def _sse_send(self, event, data):
         try:
@@ -706,47 +835,87 @@ class MouwatinHandler(SimpleHTTPRequestHandler):
         except json.JSONDecodeError:
             return json_resp(self, {"error": "JSON invalide"}, 400)
         conv_id = data.get("id", str(uuid.uuid4()))
-        title = data.get("title", "Conversation")
+        title = (data.get("title", "Conversation") or "Conversation")[:200]
         provider = data.get("provider", PROVIDER)
         model = data.get("model", "gpt-4o")
         messages = data.get("messages", [])
+        if not isinstance(messages, list) or len(messages) > 200:
+            return json_resp(self, {"error": "Nombre de messages invalide"}, 400)
+        for m in messages:
+            if not isinstance(m, dict) or "role" not in m or "content" not in m:
+                return json_resp(self, {"error": "Format de message invalide"}, 400)
+            if m["role"] not in ("user", "assistant", "system"):
+                return json_resp(self, {"error": "Rôle de message invalide"}, 400)
+            if not isinstance(m["content"], str) or len(m["content"]) > 50000:
+                return json_resp(self, {"error": "Contenu de message trop long"}, 400)
         db_save_conversation(conv_id, title, provider, model, messages)
+        logger.info("Conversation %s sauvegardée (%d messages)", conv_id[:8], len(messages))
         json_resp(self, {"ok": True, "id": conv_id})
 
     def _handle_upload(self):
         length = int(self.headers.get("Content-Length", 0))
+        if length > 10 * 1024 * 1024:
+            return json_resp(self, {"error": "Fichier trop volumineux (max 10 Mo)", "ok": False}, 413)
         raw = self.rfile.read(length)
-        boundary = self.headers.get("Content-Type", "").split("boundary=", 1)[-1].strip()
+        content_type = self.headers.get("Content-Type", "")
+        boundary = content_type.split("boundary=", 1)[-1].strip() if "boundary=" in content_type else ""
         if not boundary:
             return json_resp(self, {"error": "No boundary"}, 400)
 
-        # Parse multipart
         boundary = boundary.encode("utf-8")
         parts = raw.split(b"--" + boundary)
         text_content = ""
+        file_info = []
         for part in parts:
-            if b"Content-Disposition" in part and b"filename=" in part:
-                header_end = part.find(b"\r\n\r\n")
-                if header_end != -1:
-                    file_data = part[header_end + 4:]
-                    file_data = file_data.rstrip(b"\r\n--")
-                    # Try to extract text
-                    try:
-                        text_content += file_data.decode("utf-8", errors="replace")
-                    except Exception:
-                        text_content += f"[Fichier binaire: {len(file_data)} octets]\n"
+            if b"Content-Disposition" not in part or b"filename=" not in part:
+                continue
+            header_end = part.find(b"\r\n\r\n")
+            if header_end == -1:
+                continue
+            file_data = part[header_end + 4:]
+            file_data = file_data.rstrip(b"\r\n--")
 
-        # If it looks like a document, provide it as context
-        if text_content.strip():
-            msg = json.dumps({"text": text_content.strip()[:10000]})
-        else:
-            msg = json.dumps({"text": "[Fichier reçu mais non lisible]"})
+            # Extract filename
+            disp = part[:header_end].decode("utf-8", errors="replace")
+            fname_match = re.search(r'filename="?(.*?)"?\s*(?:;|$)', disp)
+            fname = fname_match.group(1) if fname_match else "fichier"
+            fname_lower = fname.lower()
+            file_info.append(fname)
+
+            if fname_lower.endswith(".pdf"):
+                try:
+                    import subprocess, tempfile
+                    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+                        tmp.write(file_data)
+                        tmp_path = tmp.name
+                    try:
+                        result = subprocess.run(
+                            ["pdftotext", tmp_path, "-"],
+                            capture_output=True, text=True, timeout=15
+                        )
+                        if result.returncode == 0:
+                            text_content += f"\n[PDF: {fname}]\n{result.stdout[:5000]}\n"
+                        else:
+                            text_content += f"\n[PDF: {fname} - texte non extractible]\n"
+                    finally:
+                        os.unlink(tmp_path)
+                except (FileNotFoundError, subprocess.TimeoutExpired):
+                    text_content += f"\n[PDF: {fname} - extraction non disponible]\n"
+            else:
+                try:
+                    decoded = file_data.decode("utf-8", errors="replace")
+                    text_content += decoded + "\n"
+                except Exception:
+                    text_content += f"[Fichier binaire: {fname} - {len(file_data)} octets]\n"
+
+        result_text = text_content.strip()[:10000] if text_content.strip() else "[Fichier reçu mais non lisible]"
+        logger.info("Upload traité: %s (%d fichiers, %d chars)", ", ".join(file_info), len(file_info), len(result_text))
 
         self.send_response(200)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
-        self.wfile.write(msg.encode("utf-8"))
+        self.wfile.write(json.dumps({"text": result_text, "files": file_info}).encode("utf-8"))
 
 
     def _handle_feedback(self):
@@ -756,14 +925,17 @@ class MouwatinHandler(SimpleHTTPRequestHandler):
             return json_resp(self, {"error": "JSON invalide"}, 400)
         conv_id = data.get("conversation_id", "")
         msg_idx = data.get("message_idx", 0)
-        user_q = data.get("user_question", "")
-        ai_resp = data.get("ai_response", "")
+        user_q = (data.get("user_question", "") or "")[:5000]
+        ai_resp = (data.get("ai_response", "") or "")[:50000]
         rating = data.get("rating", 0)
-        correction = data.get("correction", "")
+        correction = (data.get("correction", "") or "")[:50000]
         if not conv_id or rating == 0:
             return json_resp(self, {"error": "conversation_id et rating requis"}, 400)
+        if rating not in (1, -1):
+            return json_resp(self, {"error": "rating doit être 1 (utile) ou -1 (correction)"}, 400)
         db_save_feedback(conv_id, msg_idx, user_q, ai_resp, rating, correction)
         msg = "Merci pour votre retour ! 🙏" if rating == 1 else "Merci pour votre correction, ça m'aide à apprendre ! 📚"
+        logger.info("Feedback reçu: %s (rating=%d)", conv_id[:8], rating)
         json_resp(self, {"ok": True, "message": msg})
 
 
@@ -775,7 +947,7 @@ def main():
 
     banner = """
     ╔══════════════════════════════════════════════════════╗
-    ║     🇲🇦  Mouwatin AI  ·  مواطن AI                    ║
+    ║     🇲🇦  Mouwatin AI v2 ·  مواطن AI                  ║
     ║     المساعد الإداري المغربي                           ║
     ║     Assistant Administratif Marocain                 ║
     ╚══════════════════════════════════════════════════════╝
@@ -784,7 +956,8 @@ def main():
     print(f"  🚀  Serveur : http://localhost:{PORT}")
     print(f"  🗄️   Base : {DB_PATH}")
     print(f"  🤖  Provider : {PROVIDER}")
-    print(f"  📋  Streaming : activé")
+    print(f"  ⚡  Streaming + Keepalive : activé")
+    print(f"  🛡️  Rate limit : {RATE_LIMIT} req/min/IP")
     print(f"  ⌨️   Ctrl+C pour arrêter\n")
 
     server = HTTPServer(("0.0.0.0", PORT), MouwatinHandler)

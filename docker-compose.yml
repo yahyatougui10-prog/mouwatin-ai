@@ -1,10 +1,8 @@
-version: "3.9"
-
 services:
   mouwatin-ai:
     build: .
     ports:
-      - "3000:3000"
+      - "${PORT:-3000}:3000"
     environment:
       - AI_PROVIDER=${AI_PROVIDER:-openai}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
@@ -12,11 +10,19 @@ services:
       - MISTRAL_API_KEY=${MISTRAL_API_KEY:-}
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       - PORT=3000
+      - DB_PATH=/app/data/mouwatin.db
+      - RATE_LIMIT=${RATE_LIMIT:-30}
     volumes:
       - mouwatin-data:/app/data
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:3000/api/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
-  # Optionnel: Ollama local
+  # Ollama local (optionnel)
   # ollama:
   #   image: ollama/ollama
   #   ports:
@@ -24,7 +30,13 @@ services:
   #   volumes:
   #     - ollama-data:/root/.ollama
   #   restart: unless-stopped
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: all
+  #             capabilities: [gpu]
 
 volumes:
   mouwatin-data:
-  # ollama-data:

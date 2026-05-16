@@ -9,8 +9,11 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Noto+Naskh+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🇲🇦</text></svg>">
+  <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#006233">
   <meta name="description" content="Mouwatin AI — Votre guide administratif et juridique officiel du Royaume du Maroc">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Mouwatin AI">
 </head>
 <body>
 
@@ -58,6 +61,9 @@
 
       <div class="sidebar-section">
         <h3>Conversations</h3>
+        <div style="display:flex;gap:4px;margin-top:4px;">
+          <button onclick="clearAllConversations()" class="sidebar-action-btn" title="Tout supprimer">🗑️</button>
+        </div>
       </div>
       <div id="chatHistory" class="sidebar-history"></div>
 
@@ -91,6 +97,18 @@
           <button id="themeToggle" class="toggle-btn" title="Changer le thème">
             🎨
             <span class="tooltip">Thème</span>
+          </button>
+
+          <!-- Help / Keyboard shortcuts -->
+          <button id="helpBtn" class="toggle-btn" onclick="showHelp()" title="Raccourcis clavier">
+            ⌨️
+            <span class="tooltip">Aide</span>
+          </button>
+
+          <!-- Export -->
+          <button id="exportBtn" class="toggle-btn" onclick="exportPDF()" title="Exporter la conversation">
+            📄
+            <span class="tooltip">Exporter</span>
           </button>
 
           <!-- Settings -->
@@ -135,6 +153,7 @@
       </div>
 
       <!-- Messages -->
+      <button id="scrollBottomBtn" onclick="scrollToBottom()">↓</button>
       <div id="chatMessages">
         <!-- Welcome screen -->
         <div id="welcomeScreen" class="welcome-screen">
@@ -200,6 +219,28 @@
       </form>
 
     </main>
+  </div>
+
+  <!-- Help Modal -->
+  <div id="helpModal" class="modal-overlay hidden">
+    <div class="modal" style="max-width:480px;">
+      <div class="modal-header">
+        <h3>⌨️ Raccourcis clavier</h3>
+        <button class="modal-close" onclick="closeHelp()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="shortcut-list">
+          <div class="shortcut-item"><kbd>Enter</kbd> <span>Envoyer le message</span></div>
+          <div class="shortcut-item"><kbd>Shift</kbd>+<kbd>Enter</kbd> <span>Nouvelle ligne</span></div>
+          <div class="shortcut-item"><kbd>Ctrl</kbd>+<kbd>Enter</kbd> <span>Envoyer (alternative)</span></div>
+          <div class="shortcut-item"><kbd>Escape</kbd> <span>Arrêter la génération / Fermer les panneaux</span></div>
+          <div class="shortcut-item"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>E</kbd> <span>Exporter la conversation</span></div>
+          <div class="shortcut-item"><kbd>Ctrl</kbd>+<kbd>N</kbd> <span>Nouvelle conversation</span></div>
+          <div class="shortcut-item"><kbd>Ctrl</kbd>+<kbd>,</kbd> <span>Ouvrir les paramètres</span></div>
+          <div class="shortcut-item"><kbd>Ctrl</kbd>+<kbd>/</kbd> <span>Cette aide</span></div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- Correction Modal -->

@@ -19,6 +19,7 @@ const state = {
   mediaRecorder: null,
   audioChunks: [],
   isRecording: false,
+  isOnline: navigator.onLine,
 }
 
 let _messageCounter = 0
@@ -81,15 +82,79 @@ function esc(str) {
   return div.innerHTML
 }
 
-function formatContent(content) {
-  let html = esc(content)
-    .replace(/### (.*?)(?:\n|$)/g, '<div class="section-title">$1</div>')
-    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\n/g, '<br>')
-    .replace(/(①|②|③|④|⑤|⑥|⑦|⑧)/g, '<span class="highlight">$1</span>')
+function escapeHtml(str) {
+  const d = document.createElement('div')
+  d.textContent = str
+  return d.innerHTML
+}
 
-  // Convert numbered lists
-  html = html.replace(/(\d+)\. /g, '<span style="color:var(--green);font-weight:600;">$1.</span> ')
+function formatContent(content) {
+  if (!content) return ''
+
+  let html = content
+
+  // Preserve code blocks first
+  const codeBlocks = []
+  html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, (match, lang, code) => {
+    const idx = codeBlocks.length
+    codeBlocks.push({ lang: lang || '', code: code.trimEnd() })
+    return `%%CODEBLOCK_${idx}%%`
+  })
+
+  // Inline code
+  html = html.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>')
+
+  // Headers
+  html = html.replace(/^#### (.*?)$/gm, '<h4>$1</h4>')
+  html = html.replace(/^### (.*?)$/gm, '<h3 class="section-title">$1</h3>')
+  html = html.replace(/^## (.*?)$/gm, '<h2>$1</h2>')
+
+  // Bold & italic
+  html = html.replace(/\*\*\*(.*?)\*\*\*/g, '<strong><em>$1</em></strong>')
+  html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+  html = html.replace(/\*(.*?)\*/g, '<em>$1</em>')
+
+  // Highlight circled numbers
+  html = html.replace(/(①|②|③|④|⑤|⑥|⑦|⑧|⑨|⑩)/g, '<span class="highlight">$1</span>')
+
+  // Tables
+  html = html.replace(/^\|(.+)\|$/gm, (line) => {
+    if (line.includes('---')) return '<hr class="table-sep">'
+    const cells = line.split('|').filter(c => c.trim())
+    const tag = line.startsWith('||') ? 'th' : 'td'
+    const cellHtml = cells.map(c => `<${tag}>${c.trim()}</${tag}>`).join('')
+    return `<tr>${cellHtml}</tr>`
+  })
+  html = html.replace(/(<tr>.*?<\/tr>\n?)+/g, '<table>$&</table>')
+
+  // Blockquotes
+  html = html.replace(/^&gt; (.*?)$/gm, '<blockquote>$1</blockquote>')
+
+  // Horizontal rules
+  html = html.replace(/^---$/gm, '<hr>')
+  html = html.replace(/^___$/gm, '<hr>')
+
+  // Unordered lists
+  html = html.replace(/^[\s]*[-*+]\s+(.*)$/gm, '<li>$1</li>')
+  html = html.replace(/(<li>.*?<\/li>\n?)+/g, '<ul>$&</ul>')
+
+  // Ordered lists with styled numbers
+  html = html.replace(/^(\d+)\.\s+(.*)$/gm, '<li value="$1"><span class="list-num">$1.</span> $2</li>')
+  html = html.replace(/(<li value=".*?<\/li>\n?)+/g, '<ol>$&</ol>')
+
+  // Line breaks
+  html = html.replace(/\n/g, '<br>')
+
+  // Restore code blocks
+  html = html.replace(/%%CODEBLOCK_(\d+)%%/g, (match, idx) => {
+    const block = codeBlocks[parseInt(idx)]
+    const langLabel = block.lang ? `<span class="code-lang">${block.lang}</span>` : ''
+    const copyBtn = `<button class="code-copy" onclick="copyToClipboard(${JSON.stringify(block.code)})" title="Copier">📋</button>`
+    return `<div class="code-block">${langLabel}${copyBtn}<pre><code>${escapeHtml(block.code)}</code></pre></div>`
+  })
+
+  // Clean empty paragraphs
+  html = html.replace(/<br>\s*<br>/g, '<br>')
 
   return html
 }
@@ -99,6 +164,15 @@ function scrollToBottom() {
     chatMessages.scrollTop = chatMessages.scrollHeight
   })
 }
+
+// Show scroll-to-bottom button when not at bottom
+chatMessages.addEventListener('scroll', () => {
+  const btn = document.getElementById('scrollBottomBtn')
+  if (!btn) return
+  const threshold = 200
+  const atBottom = chatMessages.scrollHeight - chatMessages.scrollTop - chatMessages.clientHeight < threshold
+  btn.classList.toggle('visible', !atBottom)
+})
 
 function showToast(msg) {
   toast.textContent = msg
@@ -116,7 +190,6 @@ function copyToClipboard(text) {
   navigator.clipboard.writeText(text).then(() => {
     showToast(t('Copié !', 'تم النسخ !'))
   }).catch(() => {
-    // Fallback
     const ta = document.createElement('textarea')
     ta.value = text
     document.body.appendChild(ta)
@@ -125,6 +198,77 @@ function copyToClipboard(text) {
     ta.remove()
     showToast(t('Copié !', 'تم النسخ !'))
   })
+}
+
+// ── Text-to-Speech ──
+let speechSynth = null
+let speechUtterance = null
+
+function speakText(text) {
+  if (!window.speechSynthesis) {
+    showToast(t('Synthèse vocale non supportée', 'التركيب الصوتي غير مدعوم'))
+    return
+  }
+  if (speechSynth && speechSynthesis.speaking) {
+    speechSynthesis.cancel()
+    return
+  }
+  const cleaned = text.replace(/[①-⑩*#]/g, '').replace(/\s+/g, ' ').trim()
+  if (!cleaned) return
+  speechUtterance = new SpeechSynthesisUtterance(cleaned)
+  speechUtterance.lang = state.lang === 'ar' ? 'ar-MA' : 'fr-FR'
+  speechUtterance.rate = 0.95
+  speechUtterance.pitch = 1.0
+  speechUtterance.volume = 1.0
+  speechSynthesis.speak(speechUtterance)
+}
+
+// ── Suggestions ──
+const FOLLOWUP_SUGGESTIONS = {
+  'passeport': ['Quels sont les délais pour un passeport urgent ?', 'Puis-je renouveler mon passeport à l\'étranger ?', 'Combien coûte le passeport marocain ?'],
+  'cin': ['Puis-je faire ma CIN en ligne ?', 'CIN perdue que faire ?', 'Délai pour obtenir une CIN'],
+  'sarl': ['Capital minimum pour une SARL', 'Statuts SARL modèle', 'SARL vs auto-entrepreneur'],
+  'divorce': ['Garde des enfants au Maroc', 'Pension alimentaire Maroc', 'Divorce sans consentement'],
+  'permis': ['Code de la route Maroc', 'Permis à points Maroc', 'Auto-école prix'],
+  'casier': ['Bulletin n°1 n°2 n°3 différence', 'Casier judiciaire en ligne', 'Casier judiciaire prix'],
+  'impôt': ['Déclaration IR en ligne', 'TVA Maroc taux', 'IS Maroc'],
+  'default': ['Comment ça marche ?', 'Quels sont vos domaines ?', 'Puis-je vous faire confiance ?'],
+}
+
+function getSuggestions(userQuestion) {
+  const q = userQuestion.toLowerCase()
+  for (const [keyword, suggestions] of Object.entries(FOLLOWUP_SUGGESTIONS)) {
+    if (q.includes(keyword)) return suggestions
+  }
+  return FOLLOWUP_SUGGESTIONS.default
+}
+
+function addSuggestions(userQuestion) {
+  const suggestions = getSuggestions(userQuestion)
+  const container = document.createElement('div')
+  container.className = 'suggestions fade-in'
+
+  const label = document.createElement('div')
+  label.className = 'suggestions-label'
+  label.textContent = t('Suggestions :', 'اقتراحات :')
+  container.appendChild(label)
+
+  const chips = document.createElement('div')
+  chips.className = 'suggestions-chips'
+  suggestions.forEach(s => {
+    const chip = document.createElement('button')
+    chip.className = 'suggestion-chip'
+    chip.textContent = s
+    chip.onclick = () => {
+      chatInput.value = s
+      chatInput.dispatchEvent(new Event('input'))
+      chatForm.dispatchEvent(new Event('submit'))
+    }
+    chips.appendChild(chip)
+  })
+  container.appendChild(chips)
+  chatMessages.insertBefore(container, typingIndicator)
+  scrollToBottom()
 }
 
 // ── Learning: Feedback & Examples ──
@@ -181,6 +325,14 @@ function openCorrectionModal(msgIdx, userQuestion, aiResponse) {
 function closeCorrectionModal() {
   document.getElementById('correctionModal').classList.add('hidden')
   correctionData = null
+}
+
+// ── Help Modal ──
+function showHelp() {
+  document.getElementById('helpModal').classList.remove('hidden')
+}
+function closeHelp() {
+  document.getElementById('helpModal').classList.add('hidden')
 }
 
 async function submitCorrection() {
@@ -284,7 +436,13 @@ function populateModels(provider) {
 
 // ── Message rendering ──
 
-function addMessage(role, content, isStreaming = false) {
+function formatTimestamp(isoStr) {
+  if (!isoStr) return ''
+  const d = new Date(isoStr)
+  return d.toLocaleTimeString(state.lang === 'ar' ? 'ar-MA' : 'fr-MA', { hour: '2-digit', minute: '2-digit' })
+}
+
+function addMessage(role, content, isStreaming = false, timestamp = null) {
   welcomeScreen.classList.add('hidden')
 
   const div = document.createElement('div')
@@ -302,6 +460,14 @@ function addMessage(role, content, isStreaming = false) {
     footer.className = 'bubble-footer'
     const label = role === 'assistant' ? '🇲🇦 Mouwatin AI' : t('Vous', 'أنت')
     footer.textContent = label
+
+    // Timestamp
+    if (timestamp) {
+      const ts = document.createElement('span')
+      ts.className = 'msg-timestamp'
+      ts.textContent = formatTimestamp(timestamp)
+      footer.appendChild(ts)
+    }
 
     if (role === 'assistant') {
       const msgIdx = _messageCounter++
@@ -336,6 +502,14 @@ function addMessage(role, content, isStreaming = false) {
       feedbackGroup.appendChild(upBtn)
       feedbackGroup.appendChild(downBtn)
       footer.appendChild(feedbackGroup)
+
+      // TTS button
+      const ttsBtn = document.createElement('button')
+      ttsBtn.className = 'tts-btn'
+      ttsBtn.innerHTML = '🔊'
+      ttsBtn.title = t('Lire à voix haute', 'قراءة بصوت عال')
+      ttsBtn.onclick = () => speakText(content)
+      footer.appendChild(ttsBtn)
     }
 
     bubble.appendChild(footer)
@@ -408,22 +582,55 @@ function setLoading(isLoading) {
   state.loading = isLoading
   sendBtn.disabled = isLoading
   chatInput.disabled = isLoading
+  // Show/hide stop button
+  let stopBtn = document.getElementById('stopBtn')
   if (isLoading) {
     showTyping()
+    if (!stopBtn) {
+      stopBtn = document.createElement('button')
+      stopBtn.id = 'stopBtn'
+      stopBtn.className = 'stop-btn'
+      stopBtn.innerHTML = '⏹ ' + t('Arrêter', 'إيقاف')
+      stopBtn.title = t('Arrêter la génération (Escape)', 'إيقاف التوليد (Escape)')
+      stopBtn.onclick = stopStreaming
+      sendBtn.parentNode.insertBefore(stopBtn, sendBtn.nextSibling)
+    }
+    stopBtn.style.display = 'flex'
   } else {
     hideTyping()
+    if (stopBtn) stopBtn.style.display = 'none'
   }
   if (!isLoading) chatInput.focus()
+}
+
+function stopStreaming() {
+  if (state.abortController) {
+    state.abortController.abort()
+    state.abortController = null
+  }
+  if (state.streamingContent) {
+    finalizeStreamingMessage(state.streamingContent)
+    state.messages.push({ role: 'assistant', content: state.streamingContent })
+    state.streamingContent = ''
+  }
+  state.streamActive = false
+  setLoading(false)
+  showToast(t('Génération arrêtée', 'تم إيقاف التوليد'))
 }
 
 // ── Chat logic ──
 
 async function sendMessage(text) {
   if (!text.trim() || state.loading) return
+  if (!state.isOnline) {
+    showToast(t('⚠️ Vous êtes hors ligne', '⚠️ أنت غير متصل'))
+    return
+  }
 
-  const msg = { role: 'user', content: text.trim() }
+  const ts = new Date().toISOString()
+  const msg = { role: 'user', content: text.trim(), timestamp: ts }
   state.messages.push(msg)
-  addMessage('user', text.trim())
+  addMessage('user', text.trim(), false, ts)
 
   chatInput.value = ''
   chatInput.style.height = 'auto'
@@ -508,9 +715,13 @@ async function sendStreamingRequest(msg) {
   }
 
   if (state.streamingContent) {
+    const ts = new Date().toISOString()
     finalizeStreamingMessage(state.streamingContent)
-    state.messages.push({ role: 'assistant', content: state.streamingContent })
+    state.messages.push({ role: 'assistant', content: state.streamingContent, timestamp: ts })
     state.streamingContent = ''
+    // Add suggestions based on last user question
+    const lastUser = _getLastUserQuestion()
+    if (lastUser) addSuggestions(lastUser)
   }
 }
 
@@ -561,6 +772,36 @@ async function loadConversations() {
   }
 }
 
+async function searchConversations(query) {
+  if (!query) return loadConversations()
+  try {
+    const res = await fetch(`/api/conversations/search?q=${encodeURIComponent(query)}`)
+    if (res.ok) {
+      state.conversations = await res.json()
+      renderHistory()
+    }
+  } catch { /* ignore */ }
+}
+
+async function clearAllConversations() {
+  if (!confirm(t('Supprimer toutes les conversations ?', 'حذف جميع المحادثات؟'))) return
+  try {
+    const res = await fetch('/api/conversations', { method: 'DELETE' })
+    if (res.ok) {
+      state.conversations = []
+      state.currentConversationId = null
+      state.messages = []
+      document.querySelectorAll('.message').forEach(el => el.remove())
+      welcomeScreen.classList.remove('hidden')
+      chatTitle.textContent = state.lang === 'ar' ? 'مواطن AI' : 'Mouwatin AI'
+      renderHistory()
+      showToast(t('Toutes les conversations supprimées', 'تم حذف جميع المحادثات'))
+    }
+  } catch {
+    showToast(t('Erreur lors de la suppression', 'خطأ في الحذف'))
+  }
+}
+
 async function loadConversation(id) {
   try {
     const res = await fetch(`/api/conversations/${id}`)
@@ -574,7 +815,7 @@ async function loadConversation(id) {
     welcomeScreen.classList.add('hidden')
 
     state.messages.forEach(msg => {
-      addMessage(msg.role, msg.content)
+      addMessage(msg.role, msg.content, false, msg.timestamp || msg.created_at)
     })
 
     chatTitle.textContent = conv.title
@@ -922,8 +1163,14 @@ langBtns.forEach(btn => {
   })
 })
 
-// Search conversations
-searchInput.addEventListener('input', renderHistory)
+// Search conversations (debounced)
+searchInput.addEventListener('input', (() => {
+  let timer
+  return () => {
+    clearTimeout(timer)
+    timer = setTimeout(() => searchConversations(searchInput.value.trim()), 300)
+  }
+})())
 
 // Voice input
 voiceBtn.addEventListener('click', toggleVoice)
@@ -943,11 +1190,14 @@ document.addEventListener('keydown', (e) => {
   // Ctrl+Enter to send
   if (e.ctrlKey && e.key === 'Enter') {
     e.preventDefault()
-    chatForm.dispatchEvent(new Event('submit'))
+    if (!state.loading) chatForm.dispatchEvent(new Event('submit'))
   }
-  // Escape to close settings
+  // Escape
   if (e.key === 'Escape') {
+    if (state.loading) { stopStreaming(); return }
     settingsPanel.classList.add('hidden')
+    document.getElementById('helpModal').classList.add('hidden')
+    document.getElementById('correctionModal').classList.add('hidden')
     sidebar.classList.remove('open')
     overlay.classList.remove('open')
   }
@@ -955,6 +1205,21 @@ document.addEventListener('keydown', (e) => {
   if (e.ctrlKey && e.shiftKey && e.key === 'E') {
     e.preventDefault()
     exportPDF()
+  }
+  // Ctrl+N new conversation
+  if (e.ctrlKey && e.key === 'n') {
+    e.preventDefault()
+    newConversation()
+  }
+  // Ctrl+, settings
+  if (e.ctrlKey && e.key === ',') {
+    e.preventDefault()
+    settingsPanel.classList.toggle('hidden')
+  }
+  // Ctrl+/ help
+  if (e.ctrlKey && e.key === '/') {
+    e.preventDefault()
+    showHelp()
   }
 })
 
@@ -976,7 +1241,24 @@ document.addEventListener('drop', (e) => {
   handleFileUpload(e.dataTransfer.files)
 })
 
+// ── Network status ──
+window.addEventListener('online', () => {
+  state.isOnline = true
+  document.body.classList.remove('offline')
+  showToast(t('Connexion rétablie ✓', 'تمت استعادة الاتصال ✓'))
+})
+window.addEventListener('offline', () => {
+  state.isOnline = false
+  document.body.classList.add('offline')
+  showToast(t('⚠️ Connexion perdue', '⚠️ تم فقدان الاتصال'))
+})
+
+// ── Register Service Worker (PWA) ──
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').catch(() => {})
+}
+
 // ── Focus input on load ──
 chatInput.focus()
 
-console.log('🇲🇦 Mouwatin AI loaded')
+console.log('🇲🇦 Mouwatin AI v2 loaded')
