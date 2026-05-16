@@ -8,23 +8,29 @@ Assistant administratif et juridique officiel du Royaume du Maroc.
 
 Basé sur :
 - Constitution du Maroc 2011
-- Code de la famille — Moudawwana
+- Code de la famille — Moudawwana (+ réforme 2024)
 - Code du travail, Code pénal, Code de la route
 - Code de commerce, droit des sociétés
 - Législation immobilière, fiscale, sociale, numérique
-- Et plus de 40 textes de loi officiels
+- Plus de 40 textes de loi officiels
 
 ## 🚀 Lancement
 
+### Python direct
 ```bash
-# Cloner
-git clone https://github.com/votre-username/mouwatin-ai.git
-cd mouwatin-ai
-
-# Lancer le serveur
 python3 server.py
+```
 
-# Ou avec une clé API
+### Docker
+```bash
+docker-compose up
+```
+
+### Configurer la clé API
+```bash
+# Dans le fichier .env
+OPENAI_API_KEY=sk-...
+# Ou en variable d'environnement
 OPENAI_API_KEY=sk-... python3 server.py
 ```
 
@@ -32,28 +38,40 @@ Ouvrir **http://localhost:3000**
 
 ## ⚙️ Configuration
 
-La clé API OpenAI peut être définie :
-1. Dans l'interface (⚙️ en haut à droite)
-2. Via le fichier `.env` : `OPENAI_API_KEY=sk-...`
-3. Via la variable d'environnement
+Le fichier `.env` supporte :
+- `AI_PROVIDER` : `openai`, `anthropic`, `mistral`, ou `ollama`
+- `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `MISTRAL_API_KEY`
+- `OLLAMA_BASE_URL` (défaut: `http://localhost:11434`)
+- `PORT` (défaut: 3000)
+
+Les clés API peuvent aussi être saisies dans l'interface (⚙️).
 
 ## 🏗 Structure
 
 ```
 mouwatin-ai/
-├── index.html      # Interface de chat
-├── style.css       # Styles marocains
-├── script.js       # Logique front-end
-├── server.py       # Backend Python (sans dépendances)
-├── start.sh        # Script de démarrage
-├── .env            # Configuration
-└── .gitignore
+├── index.html       # Interface de chat complète
+├── style.css        # Styles (4 thèmes : clair, sombre, doré, sable)
+├── script.js        # Frontend avec streaming, voix, upload, export
+├── server.py        # Backend Python (multi-provider, SQLite, SSE)
+├── start.sh         # Script de démarrage
+├── .env             # Configuration complète
+├── Dockerfile       # Container Docker
+├── docker-compose.yml
+├── vercel.json      # Déploiement Vercel
+└── .github/workflows/ci.yml
 ```
 
 ## 📋 Fonctionnalités
 
+- **Multi-provider AI** : OpenAI, Anthropic Claude, Mistral, Ollama (local)
 - **Multilingue** : français, arabe, darija — détection automatique
 - **8 sections de réponse** structurées (documents, étapes, coûts, délais...)
-- **Prompt système complet** avec toutes les références légales marocaines
-- **Aucune dépendance** — uniquement Python 3 standard
-- **Design responsive** aux couleurs du Maroc
+- **Streaming** en temps réel des réponses
+- **Entrée vocale** 🎤 (Web Speech API)
+- **Upload de fichiers** 📎 (drag & drop ou bouton)
+- **Export PDF** 📄 (Ctrl+Shift+E)
+- **4 thèmes** : clair, sombre, doré 🇲🇦, sable
+- **Historique** persistant (SQLite) avec recherche
+- **Design responsive** mobile-first
+- **Aucune dépendance Python** — seulement la lib standard

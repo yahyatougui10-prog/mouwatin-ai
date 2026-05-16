@@ -1,0 +1,30 @@
+version: "3.9"
+
+services:
+  mouwatin-ai:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - AI_PROVIDER=${AI_PROVIDER:-openai}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - MISTRAL_API_KEY=${MISTRAL_API_KEY:-}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - PORT=3000
+    volumes:
+      - mouwatin-data:/app/data
+    restart: unless-stopped
+
+  # Optionnel: Ollama local
+  # ollama:
+  #   image: ollama/ollama
+  #   ports:
+  #     - "11434:11434"
+  #   volumes:
+  #     - ollama-data:/root/.ollama
+  #   restart: unless-stopped
+
+volumes:
+  mouwatin-data:
+  # ollama-data:

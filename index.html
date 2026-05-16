@@ -2,74 +2,196 @@
 <html lang="fr" dir="ltr">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
   <title>Mouwatin AI — المساعد الإداري المغربي</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Naskh+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Noto+Naskh+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🇲🇦</text></svg>">
+  <meta name="theme-color" content="#006233">
+  <meta name="description" content="Mouwatin AI — Votre guide administratif et juridique officiel du Royaume du Maroc">
 </head>
 <body>
+
   <div id="app">
-    <!-- Header -->
-    <header>
-      <div class="header-content">
-        <div class="logo-area">
-          <div class="logo-icon">مو</div>
-          <div class="logo-text">
-            <h1>Mouwatin AI</h1>
-            <span class="subtitle">المساعد الإداري المغربي</span>
+
+    <!-- ====== Overlay ====== -->
+    <div id="sidebarOverlay" class="sidebar-overlay"></div>
+
+    <!-- ====== Toast ====== -->
+    <div id="toast" class="toast"></div>
+
+    <!-- ====== Sidebar ====== -->
+    <aside id="sidebar">
+      <div class="sidebar-header">
+        <div class="logo-icon">مو</div>
+        <div>
+          <h1>Mouwatin AI</h1>
+          <span class="subtitle">المساعد الإداري المغربي</span>
+        </div>
+      </div>
+
+      <button id="newChatBtn" class="new-chat-btn">
+        <span>＋</span> Nouvelle conversation
+      </button>
+
+      <div class="sidebar-search">
+        <input type="text" id="searchConversations" placeholder="🔍 Rechercher..." aria-label="Rechercher une conversation">
+      </div>
+
+      <div class="sidebar-section" id="quickLinksSection">
+        <h3>Liens officiels</h3>
+        <div class="quick-links">
+          <a class="quick-link" href="https://sgg.gov.ma" target="_blank" rel="noopener">📜 SGG</a>
+          <a class="quick-link" href="https://e-gov.ma" target="_blank" rel="noopener">🏛️ E-Gov</a>
+          <a class="quick-link" href="https://portail.tax.gov.ma" target="_blank" rel="noopener">💰 DGI</a>
+          <a class="quick-link" href="https://cnss.ma" target="_blank" rel="noopener">🏥 CNSS</a>
+          <a class="quick-link" href="https://ompic.ma" target="_blank" rel="noopener">🏢 OMPIC</a>
+          <a class="quick-link" href="https://chikaya.ma" target="_blank" rel="noopener">📢 Chikaya</a>
+          <a class="quick-link" href="https://barid.ma" target="_blank" rel="noopener">📮 Barid</a>
+          <a class="quick-link" href="https://mahakim.ma" target="_blank" rel="noopener">⚖️ Mahakim</a>
+          <a class="quick-link" href="https://anapec.ma" target="_blank" rel="noopener">💼 Anapec</a>
+          <a class="quick-link" href="https://tiqqi.ma" target="_blank" rel="noopener">📱 Tiqqi</a>
+        </div>
+      </div>
+
+      <div class="sidebar-section">
+        <h3>Conversations</h3>
+      </div>
+      <div id="chatHistory" class="sidebar-history"></div>
+    </aside>
+
+    <!-- ====== Main area ====== -->
+    <main id="mainArea">
+
+      <!-- Header -->
+      <header class="chat-header">
+        <div class="chat-header-left">
+          <button id="menuToggle" class="menu-toggle" aria-label="Menu">☰</button>
+          <h2 id="chatTitle">Mouwatin AI</h2>
+        </div>
+
+        <div class="chat-header-controls">
+          <!-- Language Switcher -->
+          <div class="lang-switcher">
+            <button class="lang-btn active" data-lang="fr">FR</button>
+            <button class="lang-btn" data-lang="ar">عربي</button>
+          </div>
+
+          <!-- Theme switcher -->
+          <button id="themeToggle" class="toggle-btn" title="Changer le thème">
+            🎨
+            <span class="tooltip">Thème</span>
+          </button>
+
+          <!-- Settings -->
+          <button id="settingsBtn" class="toggle-btn" title="Paramètres">
+            ⚙️
+            <span class="tooltip">Paramètres</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- Settings panel -->
+      <div id="settingsPanel" class="hidden">
+        <div class="settings-grid">
+          <div class="settings-group">
+            <label>Provider AI</label>
+            <select id="providerSelect">
+              <option value="openai">OpenAI</option>
+              <option value="anthropic">Anthropic Claude</option>
+              <option value="mistral">Mistral AI</option>
+              <option value="ollama">Ollama (local)</option>
+            </select>
+          </div>
+          <div class="settings-group">
+            <label>Modèle</label>
+            <select id="modelSelect"></select>
+          </div>
+          <div class="settings-group full-width">
+            <label>Clé API <span class="text-red">*</span></label>
+            <input type="password" id="apiKeyInput" placeholder="sk-...">
+            <p class="settings-hint">Stockée localement dans votre navigateur.</p>
+          </div>
+          <div class="settings-group">
+            <label>Thème</label>
+            <select id="themeSelect">
+              <option value="light">Clair</option>
+              <option value="dark">Sombre</option>
+              <option value="gold">Doré 🇲🇦</option>
+              <option value="sand">Sable</option>
+            </select>
           </div>
         </div>
-        <button id="settingsBtn" class="icon-btn" title="Paramètres">⚙️</button>
       </div>
-    </header>
 
-    <!-- Settings panel -->
-    <div id="settingsPanel" class="settings-panel hidden">
-      <div class="settings-content">
-        <label for="apiKeyInput">Clé API OpenAI <span class="required">*</span></label>
-        <input type="password" id="apiKeyInput" placeholder="sk-..." />
-        <p class="hint">La clé est stockée uniquement dans votre navigateur.</p>
-        <label for="modelSelect" class="mt-2">Modèle</label>
-        <select id="modelSelect">
-          <option value="gpt-4o">GPT-4o (recommandé)</option>
-          <option value="gpt-4o-mini">GPT-4o Mini (économique)</option>
-        </select>
-      </div>
-    </div>
-
-    <!-- Messages -->
-    <main id="chatMessages">
-      <div class="message assistant fade-in">
-        <div class="bubble">
-          <span class="arabic">مرحباً !</span> Je suis <strong>Mouwatin AI</strong> 🇲🇦, votre guide administratif marocain.<br><br>
-          Comment puis-je vous aider ?<br><br>
-          <span class="arabic">كيفاش نقدر نعينك؟</span>
-          <div class="bubble-footer">🇲🇦 Mouwatin AI</div>
+      <!-- Messages -->
+      <div id="chatMessages">
+        <!-- Welcome screen -->
+        <div id="welcomeScreen" class="welcome-screen">
+          <div class="welcome-logo">مو</div>
+          <div class="arabic-title">مرحباً !</div>
+          <h2>Mouwatin AI</h2>
+          <p>
+            Votre assistant administratif et juridique marocain.<br>
+            Posez-moi une question sur vos démarches administratives.
+          </p>
+          <div class="quick-actions" id="quickActions">
+            <button class="quick-action" data-query="Comment renouveler mon passeport marocain ?">🛂 Passeport</button>
+            <button class="quick-action" data-query="Comment obtenir ou renouveler ma CIN ?">🆔 CIN</button>
+            <button class="quick-action" data-query="Comment créer une SARL au Maroc ?">🏢 Créer SARL</button>
+            <button class="quick-action" data-query="Quelles sont les étapes pour un divorce au Maroc ?">💔 Divorce</button>
+            <button class="quick-action" data-query="Comment immatriculer ma voiture au Maroc ?">🚗 Carte grise</button>
+            <button class="quick-action" data-query="Comment obtenir un extrait de naissance ?">📋 Naissance</button>
+            <button class="quick-action" data-query="Quelles sont les règles pour un héritage au Maroc ?">📜 Héritage</button>
+            <button class="quick-action" data-query="Comment s'affilier à la CNSS ?">🏥 CNSS</button>
+          </div>
         </div>
       </div>
+
+      <!-- Typing indicator -->
+      <div id="typingIndicator" class="message assistant hidden">
+        <div class="bubble typing-bubble">
+          <span class="typing-dot"></span>
+          <span class="typing-dot"></span>
+          <span class="typing-dot"></span>
+        </div>
+      </div>
+
+      <!-- Input -->
+      <form id="chatForm">
+        <div class="input-wrapper">
+          <textarea id="chatInput" rows="1" placeholder="Posez votre question administrative..." style="min-height:44px;max-height:120px" aria-label="Message"></textarea>
+          <div class="input-actions">
+            <button type="button" id="voiceBtn" class="input-action-btn" title="Entrée vocale" aria-label="Entrée vocale">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                <line x1="12" y1="19" x2="12" y2="23"/>
+                <line x1="8" y1="23" x2="16" y2="23"/>
+              </svg>
+            </button>
+            <button type="button" id="uploadBtn" class="input-action-btn" title="Joindre un fichier" aria-label="Joindre un fichier">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="17 8 12 3 7 8"/>
+                <line x1="12" y1="3" x2="12" y2="15"/>
+              </svg>
+            </button>
+            <input type="file" id="fileInput" accept=".txt,.pdf,.doc,.docx,.png,.jpg,.jpeg" multiple style="display:none">
+            <button type="submit" id="sendBtn" aria-label="Envoyer">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="22" y1="2" x2="11" y2="13"></line>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <p class="disclaimer">Mouwatin AI peut faire des erreurs. Ne remplace pas un avocat ou notaire pour les cas complexes.</p>
+      </form>
+
     </main>
-
-    <!-- Typing indicator -->
-    <div id="typingIndicator" class="message assistant hidden">
-      <div class="bubble typing-bubble">
-        <span class="typing-dot"></span>
-        <span class="typing-dot"></span>
-        <span class="typing-dot"></span>
-      </div>
-    </div>
-
-    <!-- Input -->
-    <form id="chatForm">
-      <div class="input-area">
-        <textarea id="chatInput" rows="1" placeholder="Posez votre question administrative..." style="min-height:44px;max-height:120px"></textarea>
-        <button type="submit" id="sendBtn">Envoyer</button>
-      </div>
-      <p class="disclaimer">Mouwatin AI peut faire des erreurs. Ne remplace pas un professionnel du droit.</p>
-    </form>
   </div>
 
   <script src="script.js"></script>
