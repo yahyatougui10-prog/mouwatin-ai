@@ -60,6 +60,14 @@
         <h3>Conversations</h3>
       </div>
       <div id="chatHistory" class="sidebar-history"></div>
+
+      <!-- Learning stats -->
+      <div class="sidebar-section" id="learningSidebar">
+        <h3>🧠 Apprentissage</h3>
+        <div id="learningStats">
+          <div class="learning-loading">Chargement...</div>
+        </div>
+      </div>
     </aside>
 
     <!-- ====== Main area ====== -->
@@ -192,6 +200,27 @@
       </form>
 
     </main>
+  </div>
+
+  <!-- Correction Modal -->
+  <div id="correctionModal" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Aider Mouwatin AI à apprendre 📚</h3>
+        <button class="modal-close" onclick="closeCorrectionModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <p style="color:var(--text-secondary);margin-bottom:12px;">
+          Que devrait répondre Mouwatin AI à cette question ? Votre correction devient un exemple pour améliorer les futures réponses.
+        </p>
+        <div id="correctionQuestion" class="correction-question"></div>
+        <textarea id="correctionInput" class="correction-input" rows="5" placeholder="Écrivez la réponse idéale ici..."></textarea>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="closeCorrectionModal()">Annuler</button>
+        <button class="btn-primary" onclick="submitCorrection()">✅ Envoyer la correction</button>
+      </div>
+    </div>
   </div>
 
   <script src="script.js"></script>

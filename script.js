@@ -21,6 +21,9 @@ const state = {
   isRecording: false,
 }
 
+let _messageCounter = 0
+let correctionData = null
+
 const MODELS_BY_PROVIDER = {
   openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo'],
   anthropic: ['claude-sonnet-4-20250514', 'claude-3-5-sonnet-latest', 'claude-3-5-haiku-latest'],
@@ -67,6 +70,7 @@ populateModels(state.provider)
 applyTheme(state.theme)
 setActiveLanguage(state.lang)
 loadConversations()
+loadLearningStats()
 if (state.lang === 'ar') document.documentElement.dir = 'rtl'
 
 // ── Helpers ──
@@ -123,6 +127,152 @@ function copyToClipboard(text) {
   })
 }
 
+// ── Learning: Feedback & Examples ──
+
+function _getLastUserQuestion() {
+  for (let i = state.messages.length - 1; i >= 0; i--) {
+    if (state.messages[i].role === 'user') return state.messages[i].content
+  }
+  return ''
+}
+
+async function sendFeedback(msgIdx, rating, userQuestion, aiResponse, groupEl) {
+  if (!state.currentConversationId) {
+    showToast(t('Sauvegardez d\'abord la conversation', 'احفظ المحادثة أولاً'))
+    return
+  }
+
+  // Disable buttons after feedback
+  groupEl.querySelectorAll('.feedback-btn').forEach(b => b.classList.add('done'))
+  if (rating === 1) {
+    groupEl.querySelector('.up').classList.add('active')
+  }
+
+  try {
+    const res = await fetch('/api/feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        conversation_id: state.currentConversationId,
+        message_idx: msgIdx,
+        user_question: userQuestion,
+        ai_response: aiResponse,
+        rating,
+        correction: '',
+      }),
+    })
+    if (res.ok) {
+      const data = await res.json()
+      showToast(data.message || t('Merci ! 🙏', 'شكراً! 🙏'))
+      loadLearningStats()
+    }
+  } catch { /* ignore */ }
+}
+
+function openCorrectionModal(msgIdx, userQuestion, aiResponse) {
+  correctionData = { msgIdx, userQuestion, aiResponse }
+  document.getElementById('correctionQuestion').textContent =
+    t('Question : ', 'السؤال : ') + userQuestion
+  document.getElementById('correctionInput').value =
+    t('--- Correction pour :\n', '--- تصحيح لـ :\n') + aiResponse + '\n\n'
+  document.getElementById('correctionModal').classList.remove('hidden')
+}
+
+function closeCorrectionModal() {
+  document.getElementById('correctionModal').classList.add('hidden')
+  correctionData = null
+}
+
+async function submitCorrection() {
+  if (!correctionData || !state.currentConversationId) return
+  const correction = document.getElementById('correctionInput').value.trim()
+  if (!correction) return
+
+  try {
+    const res = await fetch('/api/feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        conversation_id: state.currentConversationId,
+        message_idx: correctionData.msgIdx,
+        user_question: correctionData.userQuestion,
+        ai_response: correctionData.aiResponse,
+        rating: -1,
+        correction,
+      }),
+    })
+    if (res.ok) {
+      showToast(t('Merci pour votre correction ! 📚', 'شكرا على تصحيحك! 📚'))
+      loadLearningStats()
+    }
+  } catch { /* ignore */ }
+
+  closeCorrectionModal()
+}
+
+async function loadLearningStats() {
+  try {
+    const res = await fetch('/api/learning/stats')
+    if (res.ok) {
+      const stats = await res.json()
+      _renderLearningSidebar(stats)
+    }
+  } catch { /* ignore */ }
+}
+
+function _renderLearningSidebar(stats) {
+  let el = document.getElementById('learningStats')
+  if (!el) return
+  el.innerHTML = `
+    <div class="learning-stats">
+      <div class="stat-item">
+        <span class="stat-value">${stats.total_examples}</span>
+        <span class="stat-label">${t('Exemples appris', 'أمثلة مكتسبة')}</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-value">${stats.total_feedback}</span>
+        <span class="stat-label">${t('Retours', 'ملاحظات')}</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-value ${stats.total_up >= stats.total_down ? 'stat-good' : 'stat-bad'}">${stats.total_up}👍</span>
+        <span class="stat-label">${t('Utiles', 'مفيد')}</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-value">${stats.total_down}👎</span>
+        <span class="stat-label">${t('Corrections', 'تصحيحات')}</span>
+      </div>
+    </div>
+    ${stats.total_examples > 0 ? `
+      <details class="learning-details">
+        <summary>${t('Voir les exemples', 'عرض الأمثلة')}</summary>
+        <div class="example-list" id="exampleList"></div>
+      </details>
+    ` : `
+      <p class="learning-empty">${t('Aucun exemple appris pour le moment. Les réponses utiles (👍) deviennent automatiquement des exemples après 3 retours positifs.', 'لا توجد أمثلة مكتسبة بعد. الإجابات المفيدة (👍) تصبح تلقائياً أمثلة بعد 3 تقييمات إيجابية.')}</p>
+    `}
+  `
+
+  if (stats.total_examples > 0) {
+    loadExamplesList()
+  }
+}
+
+async function loadExamplesList() {
+  try {
+    const res = await fetch('/api/learning/examples')
+    if (!res.ok) return
+    const examples = await res.json()
+    const list = document.getElementById('exampleList')
+    if (!list) return
+    list.innerHTML = examples.map(ex =>
+      `<div class="example-item">
+        <div class="example-q">${esc(ex.question.slice(0, 80))}</div>
+        <div class="example-meta">⭐ ${ex.quality_score.toFixed(1)} · ${t('Utilisé', 'استخدم')} ${ex.usage_count}x · ${ex.source}</div>
+      </div>`
+    ).join('') || '<p class="learning-empty">' + t('Aucun exemple', 'لا توجد أمثلة') + '</p>'
+  } catch { /* ignore */ }
+}
+
 // ── Models ──
 
 function populateModels(provider) {
@@ -153,14 +303,39 @@ function addMessage(role, content, isStreaming = false) {
     const label = role === 'assistant' ? '🇲🇦 Mouwatin AI' : t('Vous', 'أنت')
     footer.textContent = label
 
-    // Copy button for assistant messages
     if (role === 'assistant') {
+      const msgIdx = _messageCounter++
+
       const copyBtn = document.createElement('button')
       copyBtn.className = 'copy-btn'
       copyBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>'
       copyBtn.title = t('Copier', 'نسخ')
       copyBtn.onclick = () => copyToClipboard(content)
       footer.appendChild(copyBtn)
+
+      // Feedback buttons
+      const feedbackGroup = document.createElement('span')
+      feedbackGroup.className = 'feedback-group'
+      feedbackGroup.dataset.msgIdx = msgIdx
+
+      const userMsg = _getLastUserQuestion()
+      feedbackGroup.dataset.userQ = userMsg
+
+      const upBtn = document.createElement('button')
+      upBtn.className = 'feedback-btn up'
+      upBtn.innerHTML = '👍'
+      upBtn.title = t('Utile', 'مفيد')
+      upBtn.onclick = () => sendFeedback(msgIdx, 1, userMsg, content, feedbackGroup)
+
+      const downBtn = document.createElement('button')
+      downBtn.className = 'feedback-btn down'
+      downBtn.innerHTML = '👎'
+      downBtn.title = t('À améliorer', 'بحاجة للتحسين')
+      downBtn.onclick = () => openCorrectionModal(msgIdx, userMsg, content)
+
+      feedbackGroup.appendChild(upBtn)
+      feedbackGroup.appendChild(downBtn)
+      footer.appendChild(feedbackGroup)
     }
 
     bubble.appendChild(footer)

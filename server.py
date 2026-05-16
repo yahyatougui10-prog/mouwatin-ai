@@ -101,8 +101,31 @@ def init_db():
             created_at TEXT NOT NULL,
             FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
         );
+        CREATE TABLE IF NOT EXISTS feedback (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            conversation_id TEXT NOT NULL,
+            message_idx INTEGER NOT NULL,
+            user_question TEXT NOT NULL,
+            ai_response TEXT NOT NULL,
+            rating INTEGER NOT NULL,
+            correction_text TEXT DEFAULT '',
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS learned_examples (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            question TEXT NOT NULL,
+            answer TEXT NOT NULL,
+            tags TEXT DEFAULT '',
+            source TEXT DEFAULT 'user',
+            usage_count INTEGER DEFAULT 0,
+            quality_score REAL DEFAULT 1.0,
+            created_at TEXT NOT NULL
+        );
         CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id);
         CREATE INDEX IF NOT EXISTS idx_conversations_updated ON conversations(updated_at);
+        CREATE INDEX IF NOT EXISTS idx_feedback_conv ON feedback(conversation_id);
+        CREATE INDEX IF NOT EXISTS idx_examples_quality ON learned_examples(quality_score DESC);
     """)
     conn.commit()
     conn.close()
@@ -154,6 +177,130 @@ def db_delete_conversation(conv_id):
     conn.commit()
     conn.close()
 
+# ── Learning: Feedback & Examples ──────────────────────────────────────────
+
+def db_save_feedback(conv_id, message_idx, user_question, ai_response, rating, correction=""):
+    now = datetime.now(timezone.utc).isoformat()
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        "INSERT INTO feedback (conversation_id, message_idx, user_question, ai_response, rating, correction_text, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (conv_id, message_idx, user_question, ai_response, rating, correction, now)
+    )
+    conn.commit()
+    # Auto-promote: if rating is 1 (thumbs up), increment quality. If it reaches 3, promote
+    if rating == 1:
+        c = conn.execute(
+            "SELECT COUNT(*) FROM feedback WHERE ai_response = ? AND rating = 1",
+            (ai_response,)
+        ).fetchone()
+        up_count = c[0]
+        if up_count >= 3:
+            existing = conn.execute(
+                "SELECT id FROM learned_examples WHERE question = ?",
+                (user_question,)
+            ).fetchone()
+            if not existing:
+                conn.execute(
+                    "INSERT INTO learned_examples (question, answer, tags, source, quality_score, created_at) "
+                    "VALUES (?, ?, ?, 'auto', 3.0, ?)",
+                    (user_question, ai_response, now)
+                )
+                conn.commit()
+    conn.close()
+
+def db_get_learning_stats():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    total_feedback = conn.execute("SELECT COUNT(*) as c FROM feedback").fetchone()["c"]
+    total_up = conn.execute("SELECT COUNT(*) as c FROM feedback WHERE rating = 1").fetchone()["c"]
+    total_down = conn.execute("SELECT COUNT(*) as c FROM feedback WHERE rating = -1").fetchone()["c"]
+    total_examples = conn.execute("SELECT COUNT(*) as c FROM learned_examples").fetchone()["c"]
+    recent_feedback = conn.execute(
+        "SELECT f.*, c.title as conv_title FROM feedback f "
+        "LEFT JOIN conversations c ON c.id = f.conversation_id "
+        "ORDER BY f.created_at DESC LIMIT 20"
+    ).fetchall()
+    conn.close()
+    return {
+        "total_feedback": total_feedback,
+        "total_up": total_up,
+        "total_down": total_down,
+        "total_examples": total_examples,
+        "recent_feedback": [dict(r) for r in recent_feedback],
+    }
+
+def db_get_examples(limit=20):
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute(
+        "SELECT * FROM learned_examples ORDER BY quality_score DESC, created_at DESC LIMIT ?",
+        (limit,)
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+def db_promote_to_example(feedback_id):
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    fb = conn.execute("SELECT * FROM feedback WHERE id = ?", (feedback_id,)).fetchone()
+    if not fb:
+        conn.close()
+        return None
+    existing = conn.execute(
+        "SELECT id FROM learned_examples WHERE question = ?", (fb["user_question"],)
+    ).fetchone()
+    if existing:
+        conn.close()
+        return {"id": existing["id"], "existing": True}
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        "INSERT INTO learned_examples (question, answer, tags, source, quality_score, created_at) "
+        "VALUES (?, ?, '', 'curated', 5.0, ?)",
+        (fb["user_question"], fb["ai_response"], now)
+    )
+    conn.commit()
+    conn.close()
+    return {"id": conn.execute("SELECT last_insert_rowid()").fetchone()[0], "existing": False}
+
+def db_delete_example(example_id):
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("DELETE FROM learned_examples WHERE id = ?", (example_id,))
+    conn.commit()
+    conn.close()
+
+def db_get_relevant_examples(query, max_examples=3):
+    """Find relevant learned examples based on simple keyword matching."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute(
+        "SELECT question, answer, usage_count FROM learned_examples ORDER BY quality_score DESC, usage_count DESC LIMIT 50"
+    ).fetchall()
+    conn.close()
+
+    if not rows:
+        return []
+
+    # Simple relevance scoring: count keyword overlaps
+    query_words = set(query.lower().split())
+    scored = []
+    for r in rows:
+        q_words = set((r["question"] or "").lower().split())
+        overlap = len(query_words & q_words)
+        if overlap > 0:
+            scored.append((overlap * 2 + r["usage_count"] * 0.1, r["question"], r["answer"]))
+
+    scored.sort(key=lambda x: -x[0])
+    best = scored[:max_examples]
+    # Increment usage_count for matched examples
+    if best:
+        conn = sqlite3.connect(DB_PATH)
+        for _, q, _ in best:
+            conn.execute("UPDATE learned_examples SET usage_count = usage_count + 1 WHERE question = ?", (q,))
+        conn.commit()
+        conn.close()
+    return [{"question": q, "answer": a} for _, q, a in best]
+
 # ── Helpers ───────────────────────────────────────────────────────────────
 
 def json_resp(handler, data, status=200):
@@ -168,7 +315,27 @@ def json_resp(handler, data, status=200):
     handler.wfile.write(body)
 
 def build_messages(messages):
-    return [{"role": "system", "content": SYSTEM_PROMPT}] + [
+    # Inject relevant learned examples as few-shot context
+    examples_text = ""
+    if messages:
+        last_user_msg = next(
+            (m["content"] for m in reversed(messages) if m["role"] == "user"),
+            ""
+        )
+        if last_user_msg:
+            examples = db_get_relevant_examples(last_user_msg)
+            if examples:
+                examples_text = "\n\n## EXEMPLES APPRIS DE CONVERSATIONS PRÉCÉDENTES\n"
+                examples_text += "Voici des exemples de réponses qui ont eu du succès pour des questions similaires. Inspire-toi de leur qualité et de leur structure :\n\n"
+                for i, ex in enumerate(examples, 1):
+                    examples_text += f"### Exemple {i} — Question : {ex['question']}\n"
+                    examples_text += f"Réponse : {ex['answer']}\n\n"
+
+    system_content = SYSTEM_PROMPT
+    if examples_text:
+        system_content += examples_text
+
+    return [{"role": "system", "content": system_content}] + [
         {"role": m["role"], "content": m["content"]} for m in messages
     ]
 
@@ -392,6 +559,22 @@ class MouwatinHandler(SimpleHTTPRequestHandler):
                 name: info["models"]
                 for name, info in PROVIDER_MAP.items()
             })
+        elif path == "/api/learning/stats":
+            return json_resp(self, db_get_learning_stats())
+        elif path == "/api/learning/examples":
+            return json_resp(self, db_get_examples())
+        elif path == "/api/learning/examples/promote" and parsed.query:
+            params = parse_qs(parsed.query)
+            fb_id = params.get("feedback_id", [None])[0]
+            if fb_id:
+                result = db_promote_to_example(int(fb_id))
+                if result:
+                    return json_resp(self, result)
+                return json_resp(self, {"error": "Feedback not found"}, 404)
+        elif path.startswith("/api/learning/examples/") and path.endswith("/delete"):
+            example_id = path.split("/")[-2]
+            db_delete_example(int(example_id))
+            return json_resp(self, {"ok": True})
         elif path == "/api/pdf" and parsed.query:
             params = parse_qs(parsed.query)
             conv_id = params.get("id", [None])[0]
@@ -438,6 +621,8 @@ class MouwatinHandler(SimpleHTTPRequestHandler):
             self._handle_save_conversation()
         elif route == "/api/upload":
             self._handle_upload()
+        elif route == "/api/feedback":
+            self._handle_feedback()
         else:
             json_resp(self, {"error": "Not found"}, 404)
 
@@ -562,6 +747,24 @@ class MouwatinHandler(SimpleHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(msg.encode("utf-8"))
+
+
+    def _handle_feedback(self):
+        try:
+            data = self._read_body()
+        except json.JSONDecodeError:
+            return json_resp(self, {"error": "JSON invalide"}, 400)
+        conv_id = data.get("conversation_id", "")
+        msg_idx = data.get("message_idx", 0)
+        user_q = data.get("user_question", "")
+        ai_resp = data.get("ai_response", "")
+        rating = data.get("rating", 0)
+        correction = data.get("correction", "")
+        if not conv_id or rating == 0:
+            return json_resp(self, {"error": "conversation_id et rating requis"}, 400)
+        db_save_feedback(conv_id, msg_idx, user_q, ai_resp, rating, correction)
+        msg = "Merci pour votre retour ! 🙏" if rating == 1 else "Merci pour votre correction, ça m'aide à apprendre ! 📚"
+        json_resp(self, {"ok": True, "message": msg})
 
 
 # ── Entry point ──────────────────────────────────────────────────────────
