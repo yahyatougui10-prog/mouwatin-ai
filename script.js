@@ -2,6 +2,10 @@
    Mouwatin AI · Script complet amélioré
    ============================================= */
 
+window.addEventListener('unhandledrejection', e => {
+  if(e.reason?.name === 'NotAllowedError' || e.reason?.message?.includes('clipboard')) e.preventDefault();
+});
+
 // ── State ──
 const state = {
   messages: [],
@@ -1101,6 +1105,12 @@ chatInput.addEventListener('keydown', (e) => {
 chatInput.addEventListener('input', () => {
   chatInput.style.height = 'auto'
   chatInput.style.height = Math.min(chatInput.scrollHeight, 120) + 'px'
+})
+
+// Block image paste
+chatInput.addEventListener('paste', (e) => {
+  for (const item of e.clipboardData?.items || [])
+    if (item.type.startsWith('image/')) { e.preventDefault(); return }
 })
 
 // Quick actions
